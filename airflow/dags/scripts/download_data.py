@@ -24,36 +24,34 @@ STATE_TABLE = os.environ['STATE_TABLE']
 API_BASE_URL = "https://api.spaceflightnewsapi.net/v4"
 
 
-
-def lambda_handler(event=None, context=None, endpoints=None):
+def lambda_handler(event, context):
     print("Iniciando extracción...")
     try:
-        # Si no se proporcionan endpoints, usar los predeterminados
-        if endpoints is None:
-            endpoints = ['/articles', '/blogs', '/reports']
+        # Obtener endpoints desde el evento o usar valores por defecto
+        endpoints = event.get('endpoints', ['/articles', '/blogs', '/reports'])
 
-        # Procesar todos los endpoints
+        # Validar formato de endpoints
+        if not isinstance(endpoints, list) or not all(isinstance(e, str) for e in endpoints):
+            raise ValueError("Formato de endpoints inválido. Debe ser una lista de strings")
+
+        print(f"Endpoints a procesar: {endpoints}")
+
         for endpoint in endpoints:
             print(f"Procesando endpoint: {endpoint}")
-            # Obtener última fecha procesada para este endpoint
             last_processed = get_last_processed_date(endpoint) or get_default_start_date()
             print(f"Iniciando extracción desde: {last_processed}")
 
-            # Procesar el endpoint
             process_endpoint(endpoint, last_processed)
-
-            # Actualizar estado para este endpoint
             update_last_processed_date(endpoint)
 
         return {
             'statusCode': 200,
-            'body': "Extracción completada."
+            'body': json.dumps("Extracción completada.")
         }
 
     except Exception as e:
         handle_error(e)
         raise
-
 
 def process_endpoint(endpoint, last_date):
     next_url = build_initial_url(endpoint, last_date)
@@ -212,13 +210,10 @@ def log_error(message):
 
 # Handler para pruebas locales
 # Handler para pruebas locales
-if __name__ == "__main__":
-    # Obtener los endpoints desde los argumentos de la línea de comandos
-    if len(sys.argv) > 1:
-        endpoints = sys.argv[1:]  # Todos los argumentos después del nombre del script
-    else:
-        endpoints = ['/articles', '/blogs', '/reports']  # Valores predeterminados
 
-    print(f"Endpoints a procesar: {endpoints}")
-    lambda_handler(endpoints=endpoints)
-    time.sleep(20)
+if __name__ == "__main__":
+    # Simular evento de prueba
+    test_event = {
+        "endpoints": ["/articles", "/blogs"]
+    }
+    lambda_handler(test_event, None)

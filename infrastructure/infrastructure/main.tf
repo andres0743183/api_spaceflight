@@ -21,7 +21,7 @@ resource "random_id" "suffix" {
 
 # S3 Buckets
 resource "aws_s3_bucket" "data_bucket" {
-  bucket = "${var.data_bucket_name}-${random_id.suffix.hex}"
+  bucket        = "${var.data_bucket_name}-${random_id.suffix.hex}"
   force_destroy = true
 }
 
@@ -33,8 +33,33 @@ resource "aws_s3_bucket_versioning" "data_bucket_versioning" {
 }
 
 resource "aws_s3_bucket" "lambda_bucket" {
-  bucket = "${var.lambda_bucket_name}-${random_id.suffix.hex}"
+  bucket        = "${var.lambda_bucket_name}-${random_id.suffix.hex}"
   force_destroy = true
+}
+
+# Cola SQS para errores (DLQ)
+resource "aws_sqs_queue" "lambda_dlq" {
+  name                      = "lambda-dlq-${random_id.suffix.hex}"
+  delay_seconds             = 0
+  max_message_size          = 262144  # 256 KB
+  message_retention_seconds = 1209600 # 14 días
+  receive_wait_time_seconds = 10
+  tags                      = var.tags
+}
+
+# Permisos para que Lambda escriba en la DLQ
+resource "aws_iam_role_policy" "lambda_sqs_access" {
+  name = "lambda-sqs-policy-${random_id.suffix.hex}"
+  role = aws_iam_role.lambda_exec.id
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Effect   = "Allow",
+      Action   = "sqs:SendMessage",
+      Resource = aws_sqs_queue.lambda_dlq.arn
+    }]
+  })
 }
 
 # Lambda Configuration
@@ -52,12 +77,14 @@ resource "aws_lambda_function" "data_ingestor" {
   role          = aws_iam_role.lambda_exec.arn
   handler       = "lambda_function.lambda_handler"
   runtime       = "python3.9"
-  timeout       = 30
+  timeout       = 900
   depends_on    = [aws_s3_object.lambda_code]
 
   environment {
     variables = {
-      TARGET_BUCKET = aws_s3_bucket.data_bucket.bucket
+      TARGET_BUCKET  = aws_s3_bucket.data_bucket.bucket
+      DYNAMODB_TABLE = aws_dynamodb_table.pipeline_state.name
+      DLQ_URL        = aws_sqs_queue.lambda_dlq.url
     }
   }
 }
@@ -81,6 +108,27 @@ resource "aws_iam_role" "lambda_exec" {
 resource "aws_iam_role_policy_attachment" "lambda_s3_access" {
   role       = aws_iam_role.lambda_exec.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+}
+
+resource "aws_iam_role_policy" "lambda_dynamo_access" {
+  name = "lambda-dynamo-policy-${random_id.suffix.hex}"
+  role = aws_iam_role.lambda_exec.id
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Effect = "Allow",
+      Action = [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:Scan",
+        "dynamodb:Query"
+      ],
+      Resource = aws_dynamodb_table.pipeline_state.arn
+    }]
+  })
 }
 
 # Glue Configuration
@@ -190,4 +238,18 @@ resource "aws_athena_workgroup" "analytics" {
     }
   }
   force_destroy = true
+}
+
+# DynamoDB Table
+resource "aws_dynamodb_table" "pipeline_state" {
+  name         = "pipeline-state-${random_id.suffix.hex}"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "id"
+
+  attribute {
+    name = "id"
+    type = "S"
+  }
+
+  tags = var.tags
 }

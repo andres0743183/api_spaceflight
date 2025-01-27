@@ -21,3 +21,10 @@ output "reports_crawler_name" {
 output "athena_workgroup" {
   value = aws_athena_workgroup.analytics.name
 }
+
+output "dynamodb_table_name" {
+  value = aws_dynamodb_table.pipeline_state.name
+}
+output "dlq_url" {
+  value = aws_sqs_queue.lambda_dlq.url
+}
