@@ -13,14 +13,13 @@ sqs = boto3.client('sqs')
 dynamodb = boto3.resource('dynamodb')
 
 # Variables de entorno
-os.environ['RAW_BUCKET'] = 'spaceflight-raw-data-test'
-os.environ['DLQ_URL'] = 'https://sqs.us-east-1.amazonaws.com/120569625886/lambda-dlq-c9bc2fb9'
-os.environ['STATE_TABLE'] = 'pipeline-state'
+# os.environ['TARGET_BUCKET'] = 'spaceflight-raw-data-test'
+# os.environ['DLQ_URL'] = 'https://sqs.us-east-1.amazonaws.com/120569625886/lambda-dlq-c9bc2fb9'
+# os.environ['DYNAMODB_TABLE'] = 'pipeline-state'
 
-
-RAW_BUCKET = os.environ['RAW_BUCKET']
+RAW_BUCKET = os.environ['TARGET_BUCKET']
 DLQ_URL = os.environ['DLQ_URL']
-STATE_TABLE = os.environ['STATE_TABLE']
+STATE_TABLE = os.environ['DYNAMODB_TABLE']
 API_BASE_URL = "https://api.spaceflightnewsapi.net/v4"
 
 
@@ -140,7 +139,7 @@ def handle_rate_limit(headers, force_retry=False):
 
     if remaining <= 2 or force_retry:
         reset_time = int(headers.get('X-RateLimit-Reset', 5))
-        sleep_time = max(reset_time, 5)
+        sleep_time = max(reset_time, 2)
         print(f"Rate limit alcanzado. Esperando {sleep_time} segundos")
         time.sleep(sleep_time)
 
@@ -174,7 +173,7 @@ def update_last_processed_date(endpoint):
 
 
 def get_default_start_date():
-    return (datetime.utcnow() - timedelta(days=1*10)).isoformat() + "Z"
+    return (datetime.utcnow() - timedelta(days=365*10)).isoformat() + "Z"
 
 
 def build_initial_url(endpoint, last_date):
